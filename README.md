@@ -170,16 +170,16 @@ class LLMProvider(ABC):
 
 ## Fases de Desarrollo
 
-### Fase 1 — Core (MVP)
-- [ ] Estructura del proyecto + dependencias
-- [ ] Config loader (yaml + env vars)
-- [ ] SQLite schema + migrations
-- [ ] LLM provider abstraction (OpenAI + Anthropic)
-- [ ] Gateway abstraction + Discord implementation
-- [ ] `/partido` + screenshot → registra partida
-- [ ] `/ranking` → leaderboard
-- [ ] `/stats @user` → stats individuales
-- [ ] Comentario tóxico automático post-partida
+### Fase 1 — Core (MVP) ✅
+- [x] Estructura del proyecto + dependencias
+- [x] Config loader (yaml + env vars)
+- [x] SQLite schema + migrations
+- [x] LLM provider abstraction (OpenAI + Anthropic)
+- [x] Gateway abstraction + Discord implementation
+- [x] `/partido` + screenshot → registra partida
+- [x] `/ranking` → leaderboard
+- [x] `/stats @user` → stats individuales
+- [x] Comentario tóxico automático post-partida
 
 ### Fase 2 — Discord Tracking
 - [ ] Track horas en voice
