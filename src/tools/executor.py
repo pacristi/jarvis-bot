@@ -72,6 +72,8 @@ class ToolExecutor:
                     if rank["total_matches"] > 0
                     else 0,
                     "avg_position": rank["avg_position"],
+                    "jaulas": rank.get("jaulas", 0),
+                    "protagonistas": rank.get("protagonistas", 0),
                 }
                 for i, rank in enumerate(rankings)
             ],
@@ -111,6 +113,8 @@ class ToolExecutor:
             "win_rate": (wins / total_matches * 100) if total_matches > 0 else 0,
             "avg_position": stats.get("avg_position", 0),
             "avg_score": stats.get("avg_score"),
+            "jaulas": stats.get("jaulas", 0),
+            "protagonistas": stats.get("protagonistas", 0),
         }
 
     async def _get_server_stats(self) -> dict[str, Any]:
