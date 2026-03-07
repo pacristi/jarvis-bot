@@ -42,7 +42,7 @@ class JarvisBot:
         # Initialize gateway
         gateway_config = self.config.get("gateways", {})
         if gateway_config.get("discord", {}).get("enabled", True):
-            self.gateway = DiscordGateway()
+            self.gateway = DiscordGateway(db=self.db)
         else:
             raise ValueError("No gateway enabled in config")
         
