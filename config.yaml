@@ -1,0 +1,12 @@
+# JARVIS Bot Configuration
+
+llm:
+  provider: "openai"  # Options: "openai" or "anthropic"
+  model: "gpt-4o-mini"  # OpenAI: gpt-4o-mini, gpt-4o | Anthropic: claude-3-5-haiku-20241022, claude-3-5-sonnet-20241022
+
+gateways:
+  discord:
+    enabled: true
+
+database:
+  path: "jarvis.db"
