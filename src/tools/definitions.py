@@ -81,4 +81,18 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "play_sound",
+        "description": "Play a sound in the voice channel where the user is connected. Use when someone says 'activa prime', 'prime time', or asks to play a sound. Available sounds: prime (Welcome to the Jungle).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sound_name": {
+                    "type": "string",
+                    "description": "Name of the sound to play. Currently available: 'prime'",
+                }
+            },
+            "required": ["sound_name"],
+        },
+    },
 ]

@@ -123,6 +123,7 @@ Tienes tools para stats. Úsalas cuando pidan datos."""
             if tool_calls:
                 # Execute all tool calls
                 tool_results = []
+                self.tool_executor._current_message = message  # Pass message context
                 for tool_call in tool_calls:
                     result = await self.tool_executor.execute(
                         tool_call["name"], tool_call["input"]
