@@ -51,3 +51,26 @@ class Result(BaseModel):
     position: int
     score: Optional[int] = None
     extra_data: Optional[str] = None  # JSON string
+
+
+class VoiceSession(BaseModel):
+    """Voice channel session for a player."""
+    
+    id: Optional[int] = None
+    player_id: int
+    channel_id: str
+    channel_name: str
+    joined_at: datetime
+    left_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+
+
+class MessageActivity(BaseModel):
+    """Message activity tracking for a player."""
+    
+    id: Optional[int] = None
+    player_id: int
+    channel_id: str
+    channel_name: str
+    message_count: int = 1
+    recorded_at: Optional[datetime] = None
