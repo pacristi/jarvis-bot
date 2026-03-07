@@ -13,14 +13,7 @@ from .database.repository import Database
 from .llm import OpenAIProvider, AnthropicProvider
 from .gateways import DiscordGateway, Message
 from .services import MatchParser, RoastGenerator
-from .commands import (
-    PartidoCommand,
-    RankingCommand,
-    StatsCommand,
-    ActividadCommand,
-    VoiceCommand,
-    ServerCommand,
-)
+from .tools import TOOLS, ToolExecutor
 
 
 class JarvisBot:
@@ -57,40 +50,24 @@ class JarvisBot:
         else:
             raise ValueError("No gateway enabled in config")
 
-        # Initialize commands
-        self.commands = {
-            "/partido": PartidoCommand(
-                self.db, self.gateway, self.match_parser, self.roast_generator
-            ),
-            "/ranking": RankingCommand(self.db, self.gateway),
-            "/stats": StatsCommand(self.db, self.gateway, self.roast_generator),
-            "/actividad": ActividadCommand(self.db, self.gateway),
-            "/voice": VoiceCommand(self.db, self.gateway),
-            "/server": ServerCommand(self.db, self.gateway),
-        }
+        # Initialize tools system
+        self.tool_executor = ToolExecutor(
+            self.db, self.gateway, self.match_parser, self.roast_generator
+        )
 
     async def handle_message(self, message: Message) -> None:
         """
-        Handle incoming messages and route to appropriate commands.
+        Handle incoming messages - responds to ANY mention using tools.
 
         Args:
             message: The incoming message
         """
         content = message.content.strip()
 
-        # Route to command handlers
-        for cmd_prefix, handler in self.commands.items():
-            if content.startswith(cmd_prefix):
-                try:
-                    await handler.handle(message)
-                except Exception as e:
-                    print(f"❌ Error handling {cmd_prefix}: {e}")
-                    await self.gateway.send(
-                        message.channel_id, f"I encountered an error: {str(e)}"
-                    )
-                return
-
         # Handle mentions
+        if not self.gateway.client.user:
+            return
+
         bot_mentioned = (
             f"<@{self.gateway.client.user.id}>" in content
             or f"<@!{self.gateway.client.user.id}>" in content
@@ -98,29 +75,134 @@ class JarvisBot:
 
         if bot_mentioned:
             try:
-                # Get recent conversation history from the channel
-                conversation_history = self.gateway.memory.format_for_llm(
-                    message.channel_id
-                )
-
-                # Generate a contextual response using the LLM
-                if conversation_history:
-                    response = await self.roast_generator.generate_contextual_response(
-                        message.author_name, content, conversation_history
-                    )
-                else:
-                    # Fallback to simple greeting if no history
-                    response = await self.roast_generator.generate_greeting(
-                        message.author_name
-                    )
-
-                await self.gateway.send(message.channel_id, response)
+                await self._handle_mention(message)
             except Exception as e:
                 print(f"❌ Error handling mention: {e}")
+                import traceback
+
+                traceback.print_exc()
                 await self.gateway.send(
                     message.channel_id,
                     "At your service, sir. Though I must say, you interrupted my calculations.",
                 )
+
+    async def _handle_mention(self, message: Message) -> None:
+        """Handle mention with LLM and tools."""
+        # Get recent conversation history
+        conversation_history = self.gateway.memory.format_for_llm(message.channel_id)
+
+        # Build JARVIS system prompt with history
+        system_prompt = """You are JARVIS, Tony Stark's AI assistant - witty, sophisticated, and slightly condescending but ultimately helpful.
+
+You have access to tools that allow you to query game statistics, player performance, voice activity, and message activity for this Discord server.
+
+Use tools when users ask for data or stats. Examples:
+- "Who's winning?" -> use get_ranking
+- "How am I doing?" -> use get_player_stats with their name
+- "Who talks the most?" -> use get_message_stats without player_name for leaderboard
+- "Server stats?" -> use get_server_stats
+
+Always respond in JARVIS's character - dry wit, British sophistication, subtle sarcasm. Keep responses concise but flavorful.
+
+When presenting data from tools, format it nicely and add your characteristic commentary."""
+
+        if conversation_history:
+            system_prompt += f"\n\n{conversation_history}"
+
+        # Build messages for LLM
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"{message.author_name}: {message.content}"},
+        ]
+
+        # Call LLM with tools
+        if hasattr(self.llm, "chat_with_tools"):
+            text_response, tool_calls = await self.llm.chat_with_tools(
+                messages=messages, tools=TOOLS, temperature=0.8
+            )
+
+            # If there are tool calls, execute them and continue conversation
+            if tool_calls:
+                # Execute all tool calls
+                tool_results = []
+                for tool_call in tool_calls:
+                    result = await self.tool_executor.execute(
+                        tool_call["name"], tool_call["input"]
+                    )
+                    tool_results.append(
+                        {"tool_call_id": tool_call["id"], "result": result}
+                    )
+
+                # Build proper Anthropic message format for tool use continuation
+                # Add assistant's tool use
+                tool_use_content = []
+                if text_response:
+                    tool_use_content.append({"type": "text", "text": text_response})
+
+                for tc in tool_calls:
+                    tool_use_content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc["id"],
+                            "name": tc["name"],
+                            "input": tc["input"],
+                        }
+                    )
+
+                # Remove system message for continuation
+                continuation_messages = [
+                    msg for msg in messages if msg["role"] != "system"
+                ]
+                continuation_messages.append(
+                    {"role": "assistant", "content": tool_use_content}
+                )
+
+                # Add tool results
+                tool_result_content = []
+                for tr in tool_results:
+                    tool_result_content.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tr["tool_call_id"],
+                            "content": str(tr["result"]),
+                        }
+                    )
+
+                continuation_messages.append(
+                    {"role": "user", "content": tool_result_content}
+                )
+
+                # Get final response with tool results
+                # We need to use the Anthropic client directly for this
+                system_msg = next(
+                    (m["content"] for m in messages if m["role"] == "system"), None
+                )
+                response = await self.llm.client.messages.create(
+                    model=self.llm.model,
+                    max_tokens=2048,
+                    system=system_msg,
+                    messages=continuation_messages,
+                    temperature=0.8,
+                )
+
+                final_text = ""
+                for block in response.content:
+                    if block.type == "text":
+                        final_text += block.text
+
+                await self.gateway.send(message.channel_id, final_text)
+            elif text_response:
+                # Direct response without tools
+                await self.gateway.send(message.channel_id, text_response)
+            else:
+                # Fallback
+                await self.gateway.send(
+                    message.channel_id, "At your service. How may I assist you today?"
+                )
+        else:
+            # Fallback to simple chat without tools (for OpenAI or other providers)
+            response = await self.llm.chat(messages, temperature=0.8)
+            await self.gateway.send(message.channel_id, response)
 
     async def start(self) -> None:
         """Start the bot."""
