@@ -141,3 +141,44 @@ class Config:
     def get_database_path(self) -> Path:
         """Get database file path as Path object."""
         return Path(self.database.path)
+
+
+def load_config(config_path: str = "config.yaml") -> dict:
+    """
+    Load configuration with graceful fallback.
+    
+    Returns a dict for backward compatibility with simpler code.
+    Falls back to defaults if config file doesn't exist.
+    """
+    try:
+        config = Config.load(config_path)
+        return {
+            "llm": {
+                "provider": config.llm.provider,
+                "model": config.llm.model,
+            },
+            "gateways": {
+                "discord": {
+                    "enabled": config.gateways.discord.enabled,
+                }
+            },
+            "database": {
+                "path": config.database.path,
+            }
+        }
+    except FileNotFoundError:
+        # Fallback to defaults if no config file
+        return {
+            "llm": {
+                "provider": os.getenv("LLM_PROVIDER", "openai"),
+                "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            },
+            "gateways": {
+                "discord": {
+                    "enabled": True,
+                }
+            },
+            "database": {
+                "path": "jarvis.db",
+            }
+        }
