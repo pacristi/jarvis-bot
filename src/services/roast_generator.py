@@ -38,7 +38,8 @@ class RoastGenerator:
         player_name: str,
         position: int,
         total_players: int,
-        recent_stats: Optional[dict] = None
+        recent_stats: Optional[dict] = None,
+        discord_stats: Optional[dict] = None
     ) -> str:
         """
         Generate a roast comment for a player after a match.
@@ -48,6 +49,7 @@ class RoastGenerator:
             position: Their position in this match (1 = first, etc.)
             total_players: Total number of players in the match
             recent_stats: Optional dict with stats like consecutive_losses, avg_position, etc.
+            discord_stats: Optional dict with voice_hours, message_count, etc.
             
         Returns:
             A JARVIS-style roast comment
@@ -56,11 +58,15 @@ class RoastGenerator:
 Match result: Position {position} out of {total_players}"""
 
         if recent_stats:
-            context += f"\nRecent stats: {recent_stats}"
+            context += f"\nMatch stats: {recent_stats}"
+        
+        if discord_stats:
+            context += f"\nDiscord activity: {discord_stats}"
         
         prompt = f"""{context}
 
-Generate a single JARVIS-style comment about this performance. Be witty and sarcastic, but ultimately good-natured."""
+Generate a single JARVIS-style comment about this performance. Be witty and sarcastic, but ultimately good-natured.
+If Discord stats are provided, you may reference their time spent talking vs. their game performance."""
 
         messages = [
             {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
@@ -69,7 +75,13 @@ Generate a single JARVIS-style comment about this performance. Be witty and sarc
         
         return await self.llm.chat(messages, temperature=0.8)
     
-    async def generate_ranking_roast(self, player_name: str, rank: int, stats: dict) -> str:
+    async def generate_ranking_roast(
+        self,
+        player_name: str,
+        rank: int,
+        stats: dict,
+        discord_stats: Optional[dict] = None
+    ) -> str:
         """
         Generate a roast for a player's overall ranking.
         
@@ -77,15 +89,22 @@ Generate a single JARVIS-style comment about this performance. Be witty and sarc
             player_name: The player's name
             rank: Their rank in the leaderboard
             stats: Dict with total_matches, wins, avg_position, etc.
+            discord_stats: Optional dict with voice_hours, message_count, etc.
             
         Returns:
             A JARVIS-style roast comment
         """
         prompt = f"""Player: {player_name}
 Rank: #{rank}
-Stats: {stats}
+Match stats: {stats}"""
 
-Generate a JARVIS-style comment about their overall performance."""
+        if discord_stats:
+            prompt += f"\nDiscord activity: {discord_stats}"
+
+        prompt += """
+
+Generate a JARVIS-style comment about their overall performance.
+If Discord stats show high activity but poor game performance, feel free to point out the irony."""
 
         messages = [
             {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
