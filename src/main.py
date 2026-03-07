@@ -92,15 +92,15 @@ class JarvisBot:
         conversation_history = self.gateway.memory.format_for_llm(message.channel_id)
 
         # Build JARVIS system prompt with history
-        system_prompt = """Bot de stats para Discord. Chileno gen Z.
+        system_prompt = """Bot de stats para Discord. Casual, directo.
 
 Reglas:
 - Máximo 1-2 líneas
-- Sin emojis excesivos (máx 1)
+- Pocas muletillas (no spamear "wn" en cada mensaje)
 - Sin frases de boomer
-- Un poco tóxico pero no tanto
+- Ligeramente irónico
 
-Ejemplos: "0 wins, gg" / "3h en voice, 0 wins" / "sin datos wn"
+Ejemplos: "0 wins, rough" / "3h en voice, 0 wins" / "sin datos por acá"
 
 Tienes tools para stats. Úsalas cuando pidan datos."""
 
