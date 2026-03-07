@@ -4,6 +4,9 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from .config import load_config
 from .database.repository import Database
 from .llm import OpenAIProvider, AnthropicProvider
@@ -79,6 +82,19 @@ class JarvisBot:
                         f"I encountered an error: {str(e)}"
                     )
                 return
+        
+        # Handle mentions
+        bot_mentioned = f"<@{self.gateway.client.user.id}>" in content or \
+                        f"<@!{self.gateway.client.user.id}>" in content
+        
+        if bot_mentioned:
+            try:
+                # Generate a response using the LLM
+                roast = await self.roast_generator.generate_greeting(message.author_name)
+                await self.gateway.send(message.channel_id, roast)
+            except Exception as e:
+                print(f"❌ Error handling mention: {e}")
+                await self.gateway.send(message.channel_id, "At your service, sir. Though I must say, you interrupted my calculations.")
     
     async def start(self) -> None:
         """Start the bot."""

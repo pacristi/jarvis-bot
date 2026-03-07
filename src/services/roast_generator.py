@@ -112,3 +112,24 @@ If Discord stats show high activity but poor game performance, feel free to poin
         ]
         
         return await self.llm.chat(messages, temperature=0.8)
+    
+    async def generate_greeting(self, player_name: str) -> str:
+        """
+        Generate a JARVIS-style greeting when mentioned.
+        
+        Args:
+            player_name: The name of the person who mentioned JARVIS
+            
+        Returns:
+            A witty JARVIS greeting
+        """
+        prompt = f"""{player_name} just greeted or mentioned you. Generate a brief, witty JARVIS-style greeting.
+Be polite but slightly condescending, as if you were interrupted from very important calculations.
+Keep it to 1-2 sentences max."""
+
+        messages = [
+            {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
+        
+        return await self.llm.chat(messages, temperature=0.9)
