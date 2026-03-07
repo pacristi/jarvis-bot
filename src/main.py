@@ -9,7 +9,7 @@ from .database.repository import Database
 from .llm import OpenAIProvider, AnthropicProvider
 from .gateways import DiscordGateway, Message
 from .services import MatchParser, RoastGenerator
-from .commands import PartidoCommand, RankingCommand, StatsCommand
+from .commands import PartidoCommand, RankingCommand, StatsCommand, ActividadCommand, VoiceCommand, ServerCommand
 
 
 class JarvisBot:
@@ -53,6 +53,9 @@ class JarvisBot:
             ),
             "/ranking": RankingCommand(self.db, self.gateway),
             "/stats": StatsCommand(self.db, self.gateway, self.roast_generator),
+            "/actividad": ActividadCommand(self.db, self.gateway),
+            "/voice": VoiceCommand(self.db, self.gateway),
+            "/server": ServerCommand(self.db, self.gateway),
         }
     
     async def handle_message(self, message: Message) -> None:
