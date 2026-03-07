@@ -7,24 +7,28 @@ from discord import Intents, ButtonStyle
 from discord.ui import View, Button
 
 from .base import Gateway, Message
+from ..database.repository import Database
 
 
 class DiscordGateway(Gateway):
     """Discord implementation of Gateway using discord.py."""
     
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, db: Optional[Database] = None):
         """
         Initialize Discord gateway.
         
         Args:
             token: Discord bot token (defaults to DISCORD_TOKEN env var)
+            db: Database instance for tracking activity
         """
         self.token = token or os.getenv("DISCORD_TOKEN")
+        self.db = db
         
         # Setup intents
         intents = Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.voice_states = True
         
         self.client = discord.Client(intents=intents)
         self.handler: Optional[Callable[[Message], Any]] = None
@@ -39,6 +43,26 @@ class DiscordGateway(Gateway):
             # Ignore bot's own messages
             if discord_message.author == self.client.user:
                 return
+            
+            # Track message activity in database
+            if self.db and not discord_message.author.bot:
+                try:
+                    # Ensure player exists
+                    player = await self.db.get_player_by_discord_id(str(discord_message.author.id))
+                    if not player:
+                        player = await self.db.create_player(
+                            str(discord_message.author.id),
+                            discord_message.author.display_name
+                        )
+                    
+                    # Record message
+                    await self.db.record_message(
+                        player.id,
+                        str(discord_message.channel.id),
+                        discord_message.channel.name if hasattr(discord_message.channel, 'name') else "DM"
+                    )
+                except Exception as e:
+                    print(f"⚠️  Error tracking message: {e}")
             
             # Convert Discord message to unified Message format
             image_url = None
@@ -61,6 +85,60 @@ class DiscordGateway(Gateway):
             # Call registered handler
             if self.handler:
                 await self.handler(msg)
+        
+        @self.client.event
+        async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+            """Track voice channel activity."""
+            if not self.db or member.bot:
+                return
+            
+            try:
+                # Ensure player exists
+                player = await self.db.get_player_by_discord_id(str(member.id))
+                if not player:
+                    player = await self.db.create_player(str(member.id), member.display_name)
+                
+                # User left a voice channel
+                if before.channel and not after.channel:
+                    # End active session
+                    session = await self.db.get_active_voice_session(
+                        player.id,
+                        str(before.channel.id)
+                    )
+                    if session:
+                        await self.db.end_voice_session(session.id)
+                        print(f"🎙️  {member.display_name} left {before.channel.name}")
+                
+                # User joined a voice channel
+                elif not before.channel and after.channel:
+                    # Start new session
+                    await self.db.start_voice_session(
+                        player.id,
+                        str(after.channel.id),
+                        after.channel.name
+                    )
+                    print(f"🎙️  {member.display_name} joined {after.channel.name}")
+                
+                # User switched channels
+                elif before.channel and after.channel and before.channel.id != after.channel.id:
+                    # End old session
+                    old_session = await self.db.get_active_voice_session(
+                        player.id,
+                        str(before.channel.id)
+                    )
+                    if old_session:
+                        await self.db.end_voice_session(old_session.id)
+                    
+                    # Start new session
+                    await self.db.start_voice_session(
+                        player.id,
+                        str(after.channel.id),
+                        after.channel.name
+                    )
+                    print(f"🎙️  {member.display_name} moved from {before.channel.name} to {after.channel.name}")
+            
+            except Exception as e:
+                print(f"⚠️  Error tracking voice state: {e}")
     
     async def send(
         self,
