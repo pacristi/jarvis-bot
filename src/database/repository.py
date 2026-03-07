@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
-from .models import Player, PlayerNickname, LinkedAccount, Match, Result
+from .models import Player, PlayerNickname, LinkedAccount, Match, Result, VoiceSession, MessageActivity
 
 
 # SQL schema
@@ -309,3 +309,197 @@ class Database:
             )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+    
+    # Voice Sessions
+    async def start_voice_session(
+        self,
+        player_id: int,
+        channel_id: str,
+        channel_name: str
+    ) -> VoiceSession:
+        """Start a voice session for a player."""
+        cursor = await self._conn.execute(
+            """
+            INSERT INTO voice_sessions (player_id, channel_id, channel_name, joined_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (player_id, channel_id, channel_name, datetime.now())
+        )
+        await self._conn.commit()
+        return VoiceSession(
+            id=cursor.lastrowid,
+            player_id=player_id,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            joined_at=datetime.now()
+        )
+    
+    async def end_voice_session(self, session_id: int) -> Optional[VoiceSession]:
+        """End a voice session and calculate duration."""
+        # Get the session
+        cursor = await self._conn.execute(
+            "SELECT * FROM voice_sessions WHERE id = ?",
+            (session_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        
+        session_dict = dict(row)
+        joined_at = datetime.fromisoformat(session_dict["joined_at"])
+        left_at = datetime.now()
+        duration = int((left_at - joined_at).total_seconds())
+        
+        # Update the session
+        await self._conn.execute(
+            """
+            UPDATE voice_sessions
+            SET left_at = ?, duration_seconds = ?
+            WHERE id = ?
+            """,
+            (left_at, duration, session_id)
+        )
+        await self._conn.commit()
+        
+        return VoiceSession(
+            **session_dict,
+            left_at=left_at,
+            duration_seconds=duration
+        )
+    
+    async def get_active_voice_session(
+        self,
+        player_id: int,
+        channel_id: str
+    ) -> Optional[VoiceSession]:
+        """Get active voice session for a player in a channel."""
+        cursor = await self._conn.execute(
+            """
+            SELECT * FROM voice_sessions
+            WHERE player_id = ? AND channel_id = ? AND left_at IS NULL
+            ORDER BY joined_at DESC
+            LIMIT 1
+            """,
+            (player_id, channel_id)
+        )
+        row = await cursor.fetchone()
+        if row:
+            return VoiceSession(**dict(row))
+        return None
+    
+    async def get_voice_stats(self, player_id: int) -> dict:
+        """Get voice activity stats for a player."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                COUNT(*) as total_sessions,
+                SUM(duration_seconds) as total_seconds,
+                AVG(duration_seconds) as avg_session_seconds,
+                MAX(duration_seconds) as longest_session_seconds
+            FROM voice_sessions
+            WHERE player_id = ? AND left_at IS NOT NULL
+            """,
+            (player_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
+    
+    async def get_voice_leaderboard(self, limit: int = 10) -> list[dict]:
+        """Get voice time leaderboard."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                p.id,
+                p.display_name,
+                COUNT(*) as total_sessions,
+                SUM(vs.duration_seconds) as total_seconds,
+                AVG(vs.duration_seconds) as avg_session_seconds
+            FROM players p
+            JOIN voice_sessions vs ON p.id = vs.player_id
+            WHERE vs.left_at IS NOT NULL
+            GROUP BY p.id
+            ORDER BY total_seconds DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+    
+    # Message Activity
+    async def record_message(
+        self,
+        player_id: int,
+        channel_id: str,
+        channel_name: str
+    ) -> MessageActivity:
+        """Record a message from a player."""
+        cursor = await self._conn.execute(
+            """
+            INSERT INTO message_activity (player_id, channel_id, channel_name, message_count)
+            VALUES (?, ?, ?, 1)
+            """,
+            (player_id, channel_id, channel_name)
+        )
+        await self._conn.commit()
+        return MessageActivity(
+            id=cursor.lastrowid,
+            player_id=player_id,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            message_count=1,
+            recorded_at=datetime.now()
+        )
+    
+    async def get_message_stats(self, player_id: int) -> dict:
+        """Get message activity stats for a player."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                COUNT(*) as total_messages,
+                COUNT(DISTINCT channel_id) as channels_used
+            FROM message_activity
+            WHERE player_id = ?
+            """,
+            (player_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
+    
+    async def get_message_leaderboard(self, limit: int = 10) -> list[dict]:
+        """Get message count leaderboard."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                p.id,
+                p.display_name,
+                COUNT(*) as total_messages,
+                COUNT(DISTINCT ma.channel_id) as channels_used
+            FROM players p
+            JOIN message_activity ma ON p.id = ma.player_id
+            GROUP BY p.id
+            ORDER BY total_messages DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+    
+    async def get_server_stats(self) -> dict:
+        """Get overall server statistics."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                COUNT(DISTINCT p.id) as total_players,
+                COUNT(DISTINCT m.id) as total_matches,
+                COUNT(DISTINCT vs.id) as total_voice_sessions,
+                COUNT(DISTINCT ma.id) as total_messages
+            FROM players p
+            LEFT JOIN matches m ON p.id = m.recorded_by
+            LEFT JOIN voice_sessions vs ON p.id = vs.player_id
+            LEFT JOIN message_activity ma ON p.id = ma.player_id
+            """
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
