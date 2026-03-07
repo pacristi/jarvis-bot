@@ -253,7 +253,7 @@ class Database:
                     AVG(score) as avg_score
                 FROM results r
                 JOIN matches m ON r.match_id = m.id
-                WHERE r.player_id = ? AND m.game_name = ?
+                WHERE r.player_id = ? AND LOWER(m.game_name) LIKE '%' || LOWER(?) || '%'
                 """,
                 (player_id, game_name),
             )
@@ -327,7 +327,7 @@ class Database:
                 FROM players p
                 JOIN results r ON p.id = r.player_id
                 JOIN matches m ON r.match_id = m.id
-                WHERE m.game_name = ?
+                WHERE LOWER(m.game_name) LIKE '%' || LOWER(?) || '%'
                 GROUP BY p.id
                 ORDER BY wins DESC, avg_position ASC
                 LIMIT ?
