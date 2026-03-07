@@ -181,10 +181,10 @@ class LLMProvider(ABC):
 - [x] `/stats @user` → stats individuales
 - [x] Comentario tóxico automático post-partida
 
-### Fase 2 — Discord Tracking
-- [ ] Track horas en voice
-- [ ] Stats de actividad del server
-- [ ] Combinar con stats de partidas para roasts
+### Fase 2 — Discord Tracking ✅
+- [x] Track horas en voice
+- [x] Stats de actividad del server
+- [x] Combinar con stats de partidas para roasts
 
 ### Fase 3 — Integraciones Externas
 - [ ] `/link riot [id]` — linkear cuenta
@@ -200,6 +200,9 @@ class LLMProvider(ABC):
 | `/partido` | Registrar partida (adjuntar screenshot) |
 | `/ranking [juego]` | Leaderboard general o por juego |
 | `/stats @usuario` | Stats individuales de un jugador |
+| `/actividad [@usuario]` | Stats de mensajes en el servidor |
+| `/voice [@usuario\|leaderboard]` | Stats de tiempo en voice channels |
+| `/server` | Stats combinados del servidor completo |
 | `/versus @uno @otro` | Head to head entre dos jugadores |
 | `/racha` | Quién viene ganando/perdiendo |
 | `/historial [n]` | Últimas n partidas |
