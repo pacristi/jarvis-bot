@@ -55,6 +55,27 @@ CREATE TABLE IF NOT EXISTS results (
     extra_data TEXT,
     UNIQUE(match_id, player_id)
 );
+
+-- Sesiones de voz (voice channels)
+CREATE TABLE IF NOT EXISTS voice_sessions (
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER REFERENCES players(id),
+    channel_id TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    joined_at TIMESTAMP NOT NULL,
+    left_at TIMESTAMP,
+    duration_seconds INTEGER
+);
+
+-- Actividad de mensajes
+CREATE TABLE IF NOT EXISTS message_activity (
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER REFERENCES players(id),
+    channel_id TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    message_count INTEGER DEFAULT 1,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
