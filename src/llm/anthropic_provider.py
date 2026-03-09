@@ -1,8 +1,10 @@
 """Anthropic LLM provider implementation."""
 
 import os
+import base64
 from typing import Optional, Any
 from anthropic import AsyncAnthropic
+import aiohttp
 
 from .base import LLMProvider
 

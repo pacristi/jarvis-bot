@@ -84,6 +84,20 @@ CREATE TABLE IF NOT EXISTS message_activity (
     message_count INTEGER DEFAULT 1,
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Historial de conversación con JARVIS (persistente entre reinicios)
+CREATE TABLE IF NOT EXISTS conversation_history (
+    id INTEGER PRIMARY KEY,
+    discord_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_discord_channel
+    ON conversation_history(discord_id, channel_id, created_at);
 """
 
 
@@ -561,6 +575,92 @@ class Database:
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+    # Conversation History
+    async def save_conversation_message(
+        self,
+        discord_id: str,
+        display_name: str,
+        channel_id: str,
+        role: str,
+        content: str,
+    ) -> None:
+        """Save a conversation message to persistent history."""
+        await self._conn.execute(
+            """
+            INSERT INTO conversation_history (discord_id, display_name, channel_id, role, content)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (discord_id, display_name, channel_id, role, content),
+        )
+        await self._conn.commit()
+
+    async def get_conversation_history(
+        self,
+        discord_id: str,
+        channel_id: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        """
+        Get recent conversation history for a user in a channel.
+        Returns messages ordered oldest-first (for LLM context).
+        """
+        cursor = await self._conn.execute(
+            """
+            SELECT role, content, display_name, created_at
+            FROM conversation_history
+            WHERE discord_id = ? AND channel_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (discord_id, channel_id, limit),
+        )
+        rows = await cursor.fetchall()
+        # Reverse so oldest is first
+        return [dict(row) for row in reversed(rows)]
+
+    async def get_channel_conversation_history(
+        self,
+        channel_id: str,
+        limit: int = 30,
+    ) -> list[dict]:
+        """
+        Get recent conversation history for a whole channel (all users).
+        Returns messages ordered oldest-first.
+        """
+        cursor = await self._conn.execute(
+            """
+            SELECT role, content, display_name, discord_id, created_at
+            FROM conversation_history
+            WHERE channel_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (channel_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    async def prune_conversation_history(
+        self,
+        discord_id: str,
+        channel_id: str,
+        keep_last: int = 50,
+    ) -> None:
+        """Keep only the last N messages for a user in a channel."""
+        await self._conn.execute(
+            """
+            DELETE FROM conversation_history
+            WHERE discord_id = ? AND channel_id = ? AND id NOT IN (
+                SELECT id FROM conversation_history
+                WHERE discord_id = ? AND channel_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            )
+            """,
+            (discord_id, channel_id, discord_id, channel_id, keep_last),
+        )
+        await self._conn.commit()
 
     async def get_server_stats(self) -> dict:
         """Get overall server statistics."""

@@ -5,7 +5,7 @@ from ..database.repository import Database
 from ..gateways.base import Gateway
 from ..services.match_parser import MatchParser
 from ..services.roast_generator import RoastGenerator
-from ..services.audio_player import AudioPlayer
+
 
 
 class ToolExecutor:
@@ -22,7 +22,6 @@ class ToolExecutor:
         self.gateway = gateway
         self.match_parser = match_parser
         self.roast_generator = roast_generator
-        self.audio_player = AudioPlayer()
         self._current_message = None  # Set by caller before execute
 
     async def execute(
@@ -52,28 +51,8 @@ class ToolExecutor:
             return await self._get_voice_stats(tool_input.get("player_name"))
         elif tool_name == "get_message_stats":
             return await self._get_message_stats(tool_input.get("player_name"))
-        elif tool_name == "play_sound":
-            return await self._play_sound(tool_input.get("sound_name", "prime"))
         else:
             return {"error": f"Unknown tool: {tool_name}"}
-    
-    async def _play_sound(self, sound_name: str) -> dict[str, Any]:
-        """Play a sound in the user's voice channel."""
-        if not self._current_message:
-            return {"success": False, "message": "No hay contexto de mensaje"}
-        
-        raw_msg = self._current_message.raw_message
-        if not raw_msg or not hasattr(raw_msg, 'author'):
-            return {"success": False, "message": "No puedo acceder al mensaje original"}
-        
-        author = raw_msg.author
-        if not author.voice or not author.voice.channel:
-            return {"success": False, "message": "No estás en un canal de voz"}
-        
-        voice_channel = author.voice.channel
-        result = await self.audio_player.play_sound(sound_name, voice_channel)
-        
-        return {"success": True, "message": result}
 
     async def _get_ranking(self, game: Optional[str] = None) -> dict[str, Any]:
         """Get ranking/leaderboard."""

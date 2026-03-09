@@ -88,32 +88,109 @@ class JarvisBot:
 
     async def _handle_mention(self, message: Message) -> None:
         """Handle mention with LLM and tools."""
-        # Get recent conversation history
-        conversation_history = self.gateway.memory.format_for_llm(message.channel_id)
+        # Load persistent conversation history for this user in this channel
+        persistent_history = await self.db.get_channel_conversation_history(
+            channel_id=message.channel_id,
+            limit=30,
+        )
 
-        # Build JARVIS system prompt with history
-        system_prompt = """Bot de stats para Discord. Casual, directo.
+        # Build JARVIS system prompt
+        system_prompt = """Eres JARVIS, el bot de este server de Discord. Grupo de amigos chilenos, todos jugadores.
 
-Reglas:
-- Máximo 1-2 líneas
-- Pocas muletillas (no spamear "wn" en cada mensaje)
-- Sin frases de boomer
-- Ligeramente irónico
+Personalidad:
+- Gen Z chileno. Directo, seco, un poco edgy. No das sermones ni explicas lo obvio.
+- Mezclas español con inglés cuando queda natural ("that's rough", "no shot", "literally", "ngl")
+- Slang chileno con moderación: "wn", "po", "ql". No lo repites en cada línea.
+- Dry humor > exclamaciones. Nunca usas signos de exclamación.
+- Respuestas de 1-2 líneas. Si es conversación casual, una línea está bien.
+- No eres un asistente servicial. Eres el bot del grupo, con opinión propia.
+- Si alguien dice algo cringe lo notas. Si alguien la caga en un juego lo sabes y lo puedes mencionar.
+- Recuerdas lo que la gente te dice. Si alguien contó algo antes, puedes referenciarlo.
+- No usas emojis nunca.
 
-Ejemplos: "0 wins, rough" / "3h en voice, 0 wins" / "sin datos por acá"
+Tienes tools para stats de partidas, rankings, voz y actividad del server. Úsalas cuando pidan datos o cuando sea relevante para el contexto."""
 
-Tienes tools para stats. Úsalas cuando pidan datos."""
+        # Build LLM messages from persistent history
+        llm_messages = []
 
-        if conversation_history:
-            system_prompt += f"\n\n{conversation_history}"
+        # Add persistent history as proper user/assistant turns
+        for entry in persistent_history:
+            role = entry["role"]
+            if role == "user":
+                llm_messages.append({
+                    "role": "user",
+                    "content": f"{entry['display_name']}: {entry['content']}",
+                })
+            else:
+                llm_messages.append({
+                    "role": "assistant",
+                    "content": entry["content"],
+                })
 
-        # Build messages for LLM
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{message.author_name}: {message.content}"},
-        ]
+        # Add current message (clean mention from content)
+        clean_content = message.content
+        if self.gateway.client.user:
+            clean_content = clean_content.replace(
+                f"<@{self.gateway.client.user.id}>", ""
+            ).replace(
+                f"<@!{self.gateway.client.user.id}>", ""
+            ).strip()
+
+        # Build current message content — include image if present
+        if message.image_url:
+            current_content = [
+                {
+                    "type": "image",
+                    "source": {"type": "url", "url": message.image_url},
+                },
+                {
+                    "type": "text",
+                    "text": f"{message.author_name}: {clean_content}" if clean_content else message.author_name,
+                },
+            ]
+        else:
+            current_content = f"{message.author_name}: {clean_content}"
+
+        llm_messages.append({
+            "role": "user",
+            "content": current_content,
+        })
+
+        # Ensure alternating roles (Anthropic requires user/assistant alternation)
+        # Deduplicate consecutive same-role messages by merging them
+        merged_messages = []
+        for msg in llm_messages:
+            if merged_messages and merged_messages[-1]["role"] == msg["role"]:
+                prev = merged_messages[-1]
+                curr_content = msg["content"]
+                # If either side is a list (vision block), normalize both to lists and extend
+                if isinstance(prev["content"], list) or isinstance(curr_content, list):
+                    if not isinstance(prev["content"], list):
+                        prev["content"] = [{"type": "text", "text": prev["content"]}]
+                    if isinstance(curr_content, list):
+                        prev["content"].extend(curr_content)
+                    else:
+                        prev["content"].append({"type": "text", "text": curr_content})
+                else:
+                    prev["content"] += f"\n{curr_content}"
+            else:
+                merged_messages.append(dict(msg))
+        llm_messages = merged_messages
+
+        # Full messages list with system prompt handled separately for Anthropic
+        messages = [{"role": "system", "content": system_prompt}] + llm_messages
+
+        # Save the user's message to persistent history
+        await self.db.save_conversation_message(
+            discord_id=message.author_id,
+            display_name=message.author_name,
+            channel_id=message.channel_id,
+            role="user",
+            content=clean_content,
+        )
 
         # Call LLM with tools
+        final_text = ""
         if hasattr(self.llm, "chat_with_tools"):
             text_response, tool_calls = await self.llm.chat_with_tools(
                 messages=messages, tools=TOOLS, temperature=0.8
@@ -133,7 +210,6 @@ Tienes tools para stats. Úsalas cuando pidan datos."""
                     )
 
                 # Build proper Anthropic message format for tool use continuation
-                # Add assistant's tool use
                 tool_use_content = []
                 if text_response:
                     tool_use_content.append({"type": "text", "text": text_response})
@@ -148,9 +224,9 @@ Tienes tools para stats. Úsalas cuando pidan datos."""
                         }
                     )
 
-                # Remove system message for continuation
+                # Remove system message for continuation (Anthropic handles it separately)
                 continuation_messages = [
-                    msg for msg in messages if msg["role"] != "system"
+                    msg for msg in llm_messages
                 ]
                 continuation_messages.append(
                     {"role": "assistant", "content": tool_use_content}
@@ -172,36 +248,47 @@ Tienes tools para stats. Úsalas cuando pidan datos."""
                 )
 
                 # Get final response with tool results
-                # We need to use the Anthropic client directly for this
-                system_msg = next(
-                    (m["content"] for m in messages if m["role"] == "system"), None
-                )
                 response = await self.llm.client.messages.create(
                     model=self.llm.model,
                     max_tokens=2048,
-                    system=system_msg,
+                    system=system_prompt,
                     messages=continuation_messages,
                     temperature=0.8,
                 )
 
-                final_text = ""
                 for block in response.content:
                     if block.type == "text":
                         final_text += block.text
 
                 await self.gateway.send(message.channel_id, final_text)
             elif text_response:
-                # Direct response without tools
-                await self.gateway.send(message.channel_id, text_response)
+                final_text = text_response
+                await self.gateway.send(message.channel_id, final_text)
             else:
-                # Fallback
-                await self.gateway.send(
-                    message.channel_id, "At your service. How may I assist you today?"
-                )
+                final_text = "A la orden, aunque no entendí bien qué querías wn."
+                await self.gateway.send(message.channel_id, final_text)
         else:
             # Fallback to simple chat without tools (for OpenAI or other providers)
-            response = await self.llm.chat(messages, temperature=0.8)
-            await self.gateway.send(message.channel_id, response)
+            final_text = await self.llm.chat(messages, temperature=0.8)
+            await self.gateway.send(message.channel_id, final_text)
+
+        # Save JARVIS response to persistent history (use bot's discord_id)
+        if final_text:
+            bot_id = str(self.gateway.client.user.id) if self.gateway.client.user else "jarvis"
+            bot_name = self.gateway.client.user.display_name if self.gateway.client.user else "JARVIS"
+            await self.db.save_conversation_message(
+                discord_id=bot_id,
+                display_name=bot_name,
+                channel_id=message.channel_id,
+                role="assistant",
+                content=final_text,
+            )
+            # Prune old history to avoid bloat (keep last 50 per user)
+            await self.db.prune_conversation_history(
+                discord_id=message.author_id,
+                channel_id=message.channel_id,
+                keep_last=50,
+            )
 
     async def start(self) -> None:
         """Start the bot."""
