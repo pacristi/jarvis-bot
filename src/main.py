@@ -12,7 +12,7 @@ from .config import load_config
 from .database.repository import Database
 from .llm import OpenAIProvider, AnthropicProvider
 from .gateways import DiscordGateway, Message
-from .services import MatchParser, RoastGenerator
+from .services import MatchParser, RoastGenerator, PlayerMemory
 from .tools import TOOLS, ToolExecutor
 
 
@@ -42,6 +42,7 @@ class JarvisBot:
         # Initialize services
         self.match_parser = MatchParser(self.llm)
         self.roast_generator = RoastGenerator(self.llm)
+        self.player_memory = PlayerMemory("player_memories.json")
 
         # Initialize gateway
         gateway_config = self.config.get("gateways", {})
@@ -52,7 +53,7 @@ class JarvisBot:
 
         # Initialize tools system
         self.tool_executor = ToolExecutor(
-            self.db, self.gateway, self.match_parser, self.roast_generator
+            self.db, self.gateway, self.match_parser, self.roast_generator, self.player_memory
         )
 
     async def handle_message(self, message: Message) -> None:
@@ -95,7 +96,7 @@ class JarvisBot:
         )
 
         # Build JARVIS system prompt
-        system_prompt = """Eres JARVIS, el bot de este server de Discord. Grupo de amigos chilenos, todos jugadores.
+        base_prompt = """Eres JARVIS, el bot de este server de Discord. Grupo de amigos chilenos, todos jugadores.
 
 Personalidad:
 - Gen Z chileno. Directo, seco, un poco edgy. No das sermones ni explicas lo obvio.
@@ -107,8 +108,15 @@ Personalidad:
 - Si alguien dice algo cringe lo notas. Si alguien la caga en un juego lo sabes y lo puedes mencionar.
 - Recuerdas lo que la gente te dice. Si alguien contó algo antes, puedes referenciarlo.
 - No usas emojis nunca.
+- Tienes memoria persistente de los jugadores. Usa el tool remember_player para guardar cosas interesantes sobre ellos.
 
-Tienes tools para stats de partidas, rankings, voz y actividad del server. Úsalas cuando pidan datos o cuando sea relevante para el contexto."""
+Tienes tools para stats de partidas, rankings, voz, actividad del server, y memoria de jugadores. Úsalas cuando sea relevante."""
+
+        # Inject player-specific notes if we have any
+        player_notes = self.player_memory.get_notes_for_prompt(
+            message.author_id, message.author_name
+        )
+        system_prompt = base_prompt + player_notes
 
         # Build LLM messages from persistent history
         llm_messages = []

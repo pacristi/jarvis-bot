@@ -81,4 +81,54 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "remember_player",
+        "description": "Save a note or observation about a player for future reference. Use this to remember things like: gaming habits, excuses they make, funny moments, their mains in games, inside jokes, etc. This helps you roast them better later.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "player_name": {
+                    "type": "string",
+                    "description": "Name of the player to save a note about.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "The observation or note to remember. Be concise but memorable.",
+                },
+            },
+            "required": ["player_name", "note"],
+        },
+    },
+    {
+        "name": "set_player_apodo",
+        "description": "Set or update a nickname/apodo for a player. Use when someone earns a new nickname through their actions or you want to call them something specific.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "player_name": {
+                    "type": "string",
+                    "description": "Name of the player.",
+                },
+                "apodo": {
+                    "type": "string",
+                    "description": "The nickname/apodo to assign.",
+                },
+            },
+            "required": ["player_name", "apodo"],
+        },
+    },
+    {
+        "name": "get_player_memory",
+        "description": "Get all your saved notes and memories about players. Use to remember what you know about someone or to see all players you have notes on.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "player_name": {
+                    "type": "string",
+                    "description": "Optional: Name of a specific player. If not provided, returns summary of all players.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]

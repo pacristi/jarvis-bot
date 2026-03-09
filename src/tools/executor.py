@@ -5,7 +5,7 @@ from ..database.repository import Database
 from ..gateways.base import Gateway
 from ..services.match_parser import MatchParser
 from ..services.roast_generator import RoastGenerator
-
+from ..services.player_memory import PlayerMemory
 
 
 class ToolExecutor:
@@ -17,11 +17,13 @@ class ToolExecutor:
         gateway: Gateway,
         match_parser: MatchParser,
         roast_generator: RoastGenerator,
+        player_memory: PlayerMemory,
     ):
         self.db = db
         self.gateway = gateway
         self.match_parser = match_parser
         self.roast_generator = roast_generator
+        self.player_memory = player_memory
         self._current_message = None  # Set by caller before execute
 
     async def execute(
@@ -51,6 +53,16 @@ class ToolExecutor:
             return await self._get_voice_stats(tool_input.get("player_name"))
         elif tool_name == "get_message_stats":
             return await self._get_message_stats(tool_input.get("player_name"))
+        elif tool_name == "remember_player":
+            return await self._remember_player(
+                tool_input["player_name"], tool_input["note"]
+            )
+        elif tool_name == "set_player_apodo":
+            return await self._set_player_apodo(
+                tool_input["player_name"], tool_input["apodo"]
+            )
+        elif tool_name == "get_player_memory":
+            return await self._get_player_memory(tool_input.get("player_name"))
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
@@ -332,3 +344,64 @@ class ToolExecutor:
                     for i, entry in enumerate(leaderboard)
                 ],
             }
+
+    async def _remember_player(self, player_name: str, note: str) -> dict[str, Any]:
+        """Save a note about a player."""
+        # Try to find player in database to get discord_id
+        player = await self.db.get_player_by_nickname(player_name)
+        
+        if player:
+            discord_id = player.discord_id
+            display_name = player.display_name
+        else:
+            # Use name as fallback ID
+            discord_id = f"unknown_{player_name.lower().replace(' ', '_')}"
+            display_name = player_name
+        
+        result = self.player_memory.add_note(discord_id, display_name, note)
+        return {"success": True, "message": result}
+
+    async def _set_player_apodo(self, player_name: str, apodo: str) -> dict[str, Any]:
+        """Set a nickname for a player."""
+        player = await self.db.get_player_by_nickname(player_name)
+        
+        if player:
+            discord_id = player.discord_id
+            display_name = player.display_name
+        else:
+            discord_id = f"unknown_{player_name.lower().replace(' ', '_')}"
+            display_name = player_name
+        
+        result = self.player_memory.set_apodo(discord_id, display_name, apodo)
+        return {"success": True, "message": result}
+
+    async def _get_player_memory(
+        self, player_name: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Get memory/notes about players."""
+        if player_name:
+            player = await self.db.get_player_by_nickname(player_name)
+            
+            if player:
+                discord_id = player.discord_id
+                display_name = player.display_name
+            else:
+                discord_id = f"unknown_{player_name.lower().replace(' ', '_')}"
+                display_name = player_name
+            
+            data = self.player_memory.get_player_notes(discord_id)
+            if not data:
+                return {
+                    "success": False,
+                    "message": f"No tengo notas sobre {display_name}",
+                }
+            
+            return {
+                "success": True,
+                "player_name": display_name,
+                "apodo": data.get("apodo"),
+                "notes": [n["text"] for n in data.get("notes", [])],
+            }
+        else:
+            summary = self.player_memory.get_all_players_summary()
+            return {"success": True, "message": summary}
